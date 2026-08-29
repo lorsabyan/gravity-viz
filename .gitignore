@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.pnpm-store/
+
+# Local QA and generated captures
+design-audit/
+design-qa/
+screenshots/
+implementation-*.png
+qa-comparison-*.jpg
+
+# Local environment and tooling noise
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+Thumbs.db
+
