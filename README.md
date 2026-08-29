@@ -94,8 +94,8 @@ React 19 UI
 ## Run locally
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Open the URL printed by Vite in a WebGPU-capable browser.
@@ -103,9 +103,8 @@ Open the URL printed by Vite in a WebGPU-capable browser.
 ## Verify the production build
 
 ```bash
-npm run build
-npm run test:sites
+pnpm build
+pnpm test:sites
 ```
 
 Every push to `main` also builds and publishes `dist/client` to GitHub Pages.
-
