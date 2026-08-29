@@ -12,6 +12,7 @@
 - Keep a legible but behaviorally realistic Solar System sample: the Sun plus all eight planets in correct orbital order, compressed astronomical distances, elliptical and inclined animated orbits, period-ordered speeds, planet-specific colors/sizes, varied surface clearance, and orbital element readouts.
 - Keep Solar System physics and display scales separate: preserve real Earth-mass and AU values, derive orbital periods from those values, map physical mass into bounded visual well strength, and offer both logarithmic full-system spacing and linear true-ratio distance spacing.
 - Selected-body focus uses a smooth tracking dolly with wheel-adjustable zoom and a user-adjustable tilted focal band (tilt-shift softening/bokeh) in Cinematic mode; Analysis mode keeps the same camera lock but remains optically crisp. Keep both focus blur and tilt user-adjustable.
+- Tilt focus must stay lightweight enough for continuous interaction: precompute per-body focus values on the CPU and avoid per-object Canvas blur filters or repeated per-body projection math in the fragment shader.
 
 Run the local server yourself and open the preview in the browser available to this environment. Do not give the user server-start instructions when you can run it.
 
