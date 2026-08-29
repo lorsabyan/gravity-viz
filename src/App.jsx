@@ -14,15 +14,18 @@ import {
   cloneDefaultCamera,
   createEngine,
   drawSceneOverlay,
+  focusUniforms,
   formatPhysicalMass,
   hitTestBody,
   pointOnWorldPlane,
+  recommendedFocusDistance,
   resetEngine,
+  stepFocusedCamera,
   stepSimulation,
   updateSolarOrbitFromPosition,
 } from "./gravity3d.js";
 
-const INITIAL_HINT = "Drag space to orbit · scroll to zoom · Shift-drag to launch.";
+const INITIAL_HINT = "Drag space to orbit · scroll to zoom · double-click a well to focus.";
 
 const ANTIALIASING_PROFILES = {
   off: { label: "OFF", dpr: 1 },
@@ -35,6 +38,7 @@ export function App() {
   const overlayCanvasRef = useRef(null);
   const engineRef = useRef(createEngine());
   const cameraRef = useRef(cloneDefaultCamera());
+  const focusDistanceRef = useRef(null);
   const optionsRef = useRef(null);
   const preZenAnalysisRef = useRef(false);
   const [paused, setPaused] = useState(false);
@@ -53,6 +57,9 @@ export function App() {
   const [launchMode, setLaunchMode] = useState(false);
   const [orbiting, setOrbiting] = useState(false);
   const [selectedBody, setSelectedBody] = useState(0);
+  const [focusedBody, setFocusedBody] = useState(null);
+  const [focusBlur, setFocusBlur] = useState(0.7);
+  const [focusTilt, setFocusTilt] = useState(-8);
   const [settingsOpen, setSettingsOpen] = useState(true);
   const [gpuStatus, setGpuStatus] = useState("INITIALIZING 3D");
   const [sceneVersion, setSceneVersion] = useState(0);
@@ -81,6 +88,9 @@ export function App() {
     speed,
     gravity,
     selectedBody,
+    focusedBody,
+    focusBlur,
+    focusTilt,
     camera,
   };
 
@@ -104,14 +114,38 @@ export function App() {
 
   const resetCamera = useCallback(() => {
     Object.assign(cameraRef.current, cloneDefaultCamera());
+    focusDistanceRef.current = null;
+    setFocusedBody(null);
     setCameraRevision((value) => value + 1);
     setHint("Perspective camera restored.");
   }, []);
+
+  const focusBody = useCallback((index) => {
+    const body = engineRef.current.bodies[index];
+    if (!body) return;
+    focusDistanceRef.current = recommendedFocusDistance(body);
+    setSelectedBody(index);
+    setFocusedBody(index);
+    setHint(`Tilt focus locked on ${body.name} · orbit and wheel zoom remain active.`);
+  }, []);
+
+  const releaseFocus = useCallback(() => {
+    focusDistanceRef.current = null;
+    setFocusedBody(null);
+    setHint("Focus released · free camera restored.");
+  }, []);
+
+  const toggleFocus = useCallback(() => {
+    if (focusedBody === selectedBody) releaseFocus();
+    else focusBody(selectedBody);
+  }, [focusBody, focusedBody, releaseFocus, selectedBody]);
 
   const reset = useCallback(
     (nextPreset = preset) => {
       resetEngine(engineRef.current, nextPreset, solarDistanceMode);
       Object.assign(cameraRef.current, cloneDefaultCamera());
+      focusDistanceRef.current = null;
+      setFocusedBody(null);
       setPreset(nextPreset);
       setShowTrails(Boolean(PRESETS[nextPreset].showTrails));
       setSelectedBody(nextPreset === "solar" ? 3 : 0);
@@ -165,6 +199,8 @@ export function App() {
               gravity: 1,
               pulse: 0,
               bodyCount: engineRef.current.bodies.length,
+              focusParams: [1, 0.7, 0, 0],
+              focusBand: [0.5, 0.5, Math.tan((-8 * Math.PI) / 180), 0.139],
               ...initialCamera,
               ...bodyUniforms(engineRef.current.bodies),
             },
@@ -191,6 +227,13 @@ export function App() {
           const options = optionsRef.current;
           const currentEngine = engineRef.current;
           stepSimulation(currentEngine, elapsed, options);
+          stepFocusedCamera(
+            currentEngine,
+            options.camera,
+            options.focusedBody,
+            elapsed,
+            focusDistanceRef.current,
+          );
           const seconds = (now - start) / 1000;
           const width = target.size[0];
           const height = target.size[1];
@@ -205,6 +248,7 @@ export function App() {
               pulse: options.paused ? 0 : 1,
               bodyCount: currentEngine.bodies.length,
               ...cameraUniforms(options.camera, width, height),
+              ...focusUniforms(currentEngine, options, width, height),
               ...bodyUniforms(currentEngine.bodies),
             },
           });
@@ -221,6 +265,13 @@ export function App() {
           previous = now;
           const options = optionsRef.current;
           stepSimulation(engineRef.current, elapsed, options);
+          stepFocusedCamera(
+            engineRef.current,
+            options.camera,
+            options.focusedBody,
+            elapsed,
+            focusDistanceRef.current,
+          );
           drawSceneOverlay(overlay, engineRef.current, options, (now - start) / 1000, true);
           fallbackAnimation = requestAnimationFrame(fallbackLoop);
         };
@@ -253,6 +304,8 @@ export function App() {
         setAnalysis((value) => !value);
       } else if (event.key.toLowerCase() === "f") {
         setShowField((value) => !value);
+      } else if (event.key.toLowerCase() === "d") {
+        toggleFocus();
       } else if (event.key.toLowerCase() === "l") {
         setShowLabels((value) => !value);
       } else if (event.key.toLowerCase() === "t") {
@@ -264,19 +317,22 @@ export function App() {
         if (optionsRef.current?.zenMode) {
           exitZen();
         } else {
+          if (Number.isInteger(optionsRef.current?.focusedBody)) releaseFocus();
           setLaunchMode(false);
           setAddWellMode(false);
           setHint(INITIAL_HINT);
         }
       } else if (event.key === "Delete" && engineRef.current.bodies.length > 2) {
         engineRef.current.bodies.splice(selectedBody, 1);
+        focusDistanceRef.current = null;
+        setFocusedBody(null);
         setSelectedBody(0);
         setSceneVersion((value) => value + 1);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [exitZen, reset, resetCamera, selectedBody, toggleZen]);
+  }, [exitZen, releaseFocus, reset, resetCamera, selectedBody, toggleFocus, toggleZen]);
 
   const pointFromEvent = (event) => {
     const bounds = overlayCanvasRef.current.getBoundingClientRect();
@@ -398,6 +454,19 @@ export function App() {
     }
   };
 
+  const onDoubleClick = (event) => {
+    const point = pointFromEvent(event);
+    const closest = hitTestBody(
+      engineRef.current.bodies,
+      point.x,
+      point.y,
+      point.width,
+      point.height,
+      cameraRef.current,
+    );
+    if (closest >= 0) focusBody(closest);
+  };
+
   const onPointerUp = (event) => {
     const currentEngine = engineRef.current;
     const canvas = overlayCanvasRef.current;
@@ -424,8 +493,15 @@ export function App() {
 
   const onWheel = (event) => {
     event.preventDefault();
-    cameraRef.current.distance *= Math.exp(event.deltaY * 0.00125);
+    const zoomScale = Math.exp(event.deltaY * 0.00125);
+    if (Number.isInteger(focusedBody)) {
+      focusDistanceRef.current = (focusDistanceRef.current ?? cameraRef.current.distance) * zoomScale;
+      cameraRef.current.distance = focusDistanceRef.current;
+    } else {
+      cameraRef.current.distance *= zoomScale;
+    }
     clampCamera(cameraRef.current);
+    if (Number.isInteger(focusedBody)) focusDistanceRef.current = cameraRef.current.distance;
     setCameraRevision((value) => value + 1);
     setHint(`Camera distance ${cameraRef.current.distance.toFixed(2)} units.`);
   };
@@ -469,6 +545,8 @@ export function App() {
       return;
     }
     currentEngine.bodies.splice(selectedBody, 1);
+    focusDistanceRef.current = null;
+    setFocusedBody(null);
     setSelectedBody(0);
     setHint("Gravity well removed from the volume.");
     setSceneVersion((value) => value + 1);
@@ -490,22 +568,24 @@ export function App() {
 
   return (
     <main
-      className={`gravity-lab ${analysis ? "is-analysis" : ""} ${zenMode ? "is-zen" : ""} aa-${antialiasing}`}
+      className={`gravity-lab ${analysis ? "is-analysis" : ""} ${zenMode ? "is-zen" : ""} ${Number.isInteger(focusedBody) ? "is-focused" : ""} aa-${antialiasing}`}
       data-scene-version={sceneVersion}
       data-camera-revision={cameraRevision}
       data-antialiasing={antialiasing}
       data-zen={zenMode ? "true" : "false"}
+      data-focused-body={Number.isInteger(focusedBody) ? engine.bodies[focusedBody]?.name : "none"}
     >
       <canvas ref={gpuCanvasRef} className="field-canvas" aria-hidden="true" />
       <canvas
         ref={overlayCanvasRef}
         className={`overlay-canvas ${addWellMode ? "is-placing" : ""} ${launchMode ? "is-launching" : ""} ${orbiting ? "is-orbiting" : ""}`}
-        aria-label="Interactive three-dimensional gravity field. Drag empty space to orbit the camera, scroll to zoom, drag glowing wells to move them, or Shift-drag to launch a tracer."
+        aria-label="Interactive three-dimensional gravity field. Drag empty space to orbit the camera, scroll to zoom, double-click a glowing well to focus it, drag wells to move them, or Shift-drag to launch a tracer."
         tabIndex={0}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onDoubleClick={onDoubleClick}
         onWheel={onWheel}
         onContextMenu={(event) => event.preventDefault()}
       />
@@ -616,6 +696,40 @@ export function App() {
                 onChange={(event) => updateElevation(event.target.value)}
               />
             </label>
+            <label>
+              <span>FOCUS BLUR</span>
+              <output>{analysis ? "CRISP" : `${Math.round(focusBlur * 100)}%`}</output>
+              <input
+                type="range"
+                aria-label="Cinematic depth of field blur"
+                aria-valuetext={analysis
+                  ? "Disabled in analysis mode"
+                  : `${Math.round(focusBlur * 100)} percent`}
+                min="0"
+                max="1"
+                step="0.01"
+                value={focusBlur}
+                disabled={analysis}
+                onChange={(event) => setFocusBlur(Number(event.target.value))}
+              />
+            </label>
+            <label>
+              <span>FOCUS TILT</span>
+              <output>{analysis ? "CRISP" : `${focusTilt > 0 ? "+" : ""}${focusTilt}°`}</output>
+              <input
+                type="range"
+                aria-label="Tilt focus angle"
+                aria-valuetext={analysis
+                  ? "Disabled in analysis mode"
+                  : `${focusTilt} degrees`}
+                min="-35"
+                max="35"
+                step="1"
+                value={focusTilt}
+                disabled={analysis}
+                onChange={(event) => setFocusTilt(Number(event.target.value))}
+              />
+            </label>
             <label className="select-control">
               <span>ANTIALIASING</span>
               <output>{ANTIALIASING_PROFILES[antialiasing].label}</output>
@@ -679,6 +793,16 @@ export function App() {
               />
             </label>
             <div className="panel-actions">
+              <button
+                type="button"
+                className={`quiet-action focus-action ${focusedBody === selectedBody ? "is-active" : ""}`}
+                aria-pressed={focusedBody === selectedBody}
+                onClick={toggleFocus}
+              >
+                {focusedBody === selectedBody
+                  ? `RELEASE ${selected?.name?.toUpperCase() ?? "FOCUS"}`
+                  : `TILT FOCUS ${selected?.name?.toUpperCase() ?? "WELL"}`}
+              </button>
               <button type="button" className="quiet-action" onClick={resetCamera}>
                 RESET CAMERA
               </button>
@@ -728,6 +852,9 @@ export function App() {
             </button>
           ))}
         </div>
+        {Number.isInteger(focusedBody) && (
+          <span className="focus-readout">TILT FOCUS · {engine.bodies[focusedBody]?.name}</span>
+        )}
       </section>
 
       <div className="interaction-hint" role="status" aria-live="polite">
@@ -773,6 +900,14 @@ export function App() {
         >
           L-POINTS
         </button>
+        <button
+          type="button"
+          className={Number.isInteger(focusedBody) ? "is-active" : ""}
+          aria-pressed={Number.isInteger(focusedBody)}
+          onClick={toggleFocus}
+        >
+          TILT FOCUS
+        </button>
         <span className="dock-divider" aria-hidden="true" />
         <button
           type="button"
@@ -799,6 +934,7 @@ export function App() {
         <span><kbd>DRAG</kbd> ORBIT</span>
         <span><kbd>SHIFT</kbd> LAUNCH</span>
         <span><kbd>WHEEL</kbd> ZOOM</span>
+        <span><kbd>D</kbd> FOCUS</span>
         <span><kbd>SPACE</kbd> PAUSE</span>
         <span><kbd>0</kbd> VIEW</span>
         <span><kbd>Z</kbd> ZEN</span>

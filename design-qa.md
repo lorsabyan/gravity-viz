@@ -41,4 +41,37 @@
 - **P3 · content:** the interactive Cluster preset retains six bodies instead of the reference's roughly four dominant bodies, but secondary bodies are visually subordinated and the same basin hierarchy is preserved.
 - **P3 · behavior:** controls become visible on hover/focus for usability, whereas the supplied still contains no interface.
 
+## Addendum — selected-body tilt focus and dolly (2026-08-29)
+
+### Comparison setup
+
+- Source of truth: `C:/Users/lorsa/AppData/Local/Temp/codex-clipboard-5e88a7cf-dba7-498b-b99c-d0fca0073aeb.png`
+- Final browser capture: `D:/Projects/gravity viz/design-qa/focus-implementation.png`
+- Combined comparison input: `D:/Projects/gravity viz/design-qa/focus-comparison.png`
+- Source frame: 1920 × 1080. The source was center-cropped to the live browser's 593 × 698 aspect ratio before the side-by-side comparison so the same focal region and vertical depth progression could be judged.
+- Live browser frame: 593 × 698, the maximum viewport exposed by the in-app browser panel.
+- Compared state: Cluster preset, Aster selected, Cinematic mode, Zen UI, tilt focus enabled, blur 70%, tilt −8°, dolly settled.
+
+### Comparison history and fixes
+
+- **P1 · focus model — resolved:** the first pass used camera-depth blur alone and read as ordinary depth of field. The final model combines depth with a narrow screen-space focal band passing through the selected body, tilted around that anchor. Grid detail, particles, trails, body halos, and body cores now soften according to the same band.
+- **P1 · zoom behavior — resolved:** the first dolly moved too close to the selected well and overexposed most of the frame. The final camera tracks the selected body's moving world position, settles at a body-aware distance, retains orbit control, and lets the wheel adjust the locked distance.
+- **P2 · tonal separation — resolved:** early focused captures stayed uniformly orange and left distant grid lines too legible. Defocused regions now lose grid contrast, broaden softly, compress highlights, and darken, leaving a visibly sharper illuminated strip around the selected body.
+- **P2 · bokeh quality — resolved:** foreground bodies originally retained hard white silhouettes. Defocused cores are now blended toward their underlying field color while their broader halos remain, producing soft out-of-focus discs rather than clipped geometry.
+- **P2 · mode behavior — resolved:** Analysis mode was verified with the same camera lock and presents a fully crisp technical grid; its focus blur and tilt controls announce `CRISP` and are disabled. Returning to Cinematic restores the optical effect without releasing the tracked body.
+
+### Interaction and runtime checks
+
+- `TILT FOCUS ASTER` engages the animated dolly and changes to `RELEASE ASTER`; the compact dock exposes the same pressed state.
+- `D` toggles selected-body focus, double-clicking a body focuses it directly, `Escape` releases focus, and Reset/Remove clear the lock safely.
+- Focus blur and tilt expose named range controls and explicit value text. Analysis mode communicates why those controls are unavailable.
+- Zen mode preserves the camera lock and effect while hiding configuration chrome. The clean final capture includes only the intentionally persistent low-opacity Zen exit affordance.
+- Live telemetry reported `WEBGPU 3D · AA BALANCED`, six wells, and an active focus target of `Aster`; no shader fallback appeared during the final capture.
+
+### Accepted residual differences
+
+- **P3 · palette:** the reference is green/yellow, while the established prototype direction intentionally remains warm amber/copper over dark plum-brown. The comparison is therefore judged on focal-plane shape, sharp-to-soft transition, bokeh, and zoom composition rather than hue identity.
+- **P3 · viewport:** the browser panel is portrait while the source is 16:9. A centered source crop was used for direct comparison; the focal-band algorithm itself is normalized to viewport coordinates and remains responsive in wide layouts.
+- **P3 · content:** the supplied still shows more explicit orbit glyphs. Cinematic Cluster keeps trajectories restrained by design, while the focus effect applies to trails and Solar System orbit paths whenever those layers are enabled.
+
 final result: passed

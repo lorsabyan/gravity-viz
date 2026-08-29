@@ -12,6 +12,8 @@ struct Params {
   cameraUp: vec4f,
   cameraForward: vec4f,
   cameraProjection: vec4f,
+  focusParams: vec4f,
+  focusBand: vec4f,
   body0: vec4f,
   body1: vec4f,
   body2: vec4f,
@@ -35,6 +37,28 @@ struct Params {
 @group(0) @binding(0) var<uniform> params: Params;
 
 const FAR_DISTANCE: f32 = 10000.0;
+
+fn projectUv(point: vec3f) -> vec2f {
+  let relative = point - params.cameraPos.xyz;
+  let depth = max(dot(relative, params.cameraForward.xyz), 0.035);
+  let cameraX = dot(relative, params.cameraRight.xyz);
+  let cameraY = dot(relative, params.cameraUp.xyz);
+  let ndcX = cameraX / max(depth * params.cameraProjection.x * params.cameraProjection.y, 0.001);
+  let ndcY = cameraY / max(depth * params.cameraProjection.x, 0.001);
+  return vec2f(0.5 + ndcX * 0.5, 0.5 - ndcY * 0.5);
+}
+
+fn focusDefocus(depth: f32, sampleUv: vec2f) -> f32 {
+  let enabled = params.focusParams.z * (1.0 - params.mode);
+  let depthDelta = abs(depth - params.focusParams.x) / max(params.focusParams.x * 0.42, 0.24);
+  let depthBlur = clamp(depthDelta, 0.0, 1.0) * 0.32;
+  let tiltedOffset = abs(
+    (sampleUv.y - params.focusBand.y)
+      - (sampleUv.x - params.focusBand.x) * params.cameraProjection.y * params.focusBand.z
+  );
+  let bandBlur = smoothstep(params.focusBand.w * 0.42, params.focusBand.w * 1.52, tiltedOffset);
+  return clamp(max(depthBlur, bandBlur) * params.focusParams.y * 1.35, 0.0, 1.0) * enabled;
+}
 
 fn hash21(p: vec2f) -> f32 {
   let h = dot(p, vec2f(127.1, 311.7));
@@ -209,8 +233,12 @@ fn background(ray: vec3f, uv: vec2f) -> vec3f {
       let alongRay = max(0.0, dot(center - origin, ray));
       let closest = origin + ray * alongRay;
       let rayDistance = length(center - closest);
-      let halo = exp(-rayDistance * (10.5 - body.z * 0.3)) * body.z;
-      let hot = exp(-rayDistance * 34.0) * body.z;
+      let bodyDepth = dot(center - origin, params.cameraForward.xyz);
+      let bodyDefocus = focusDefocus(bodyDepth, projectUv(center));
+      let haloRate = mix(10.5 - body.z * 0.3, 6.2, bodyDefocus);
+      let hotRate = mix(34.0, 14.0, bodyDefocus);
+      let halo = exp(-rayDistance * haloRate) * body.z * mix(1.0, 0.9, bodyDefocus);
+      let hot = exp(-rayDistance * hotRate) * body.z * mix(1.0, 0.72, bodyDefocus);
       let cinematicTint = mix(vec3f(1.18, 0.13, 0.018), style.rgb, 0.56);
       let analysisTint = mix(vec3f(0.96, 0.21, 0.0), style.rgb, 0.48);
       let cinematicGlow = cinematicTint * halo + mix(vec3f(1.45, 0.52, 0.1), style.rgb, 0.42) * hot;
@@ -226,6 +254,7 @@ fn background(ray: vec3f, uv: vec2f) -> vec3f {
     let diffuse = max(0.0, dot(normal, lightDirection));
     let rim = pow(1.0 - max(0.0, dot(normal, -ray)), 2.5);
     let depth = clamp(-surfacePoint.y / 0.72, 0.0, 1.0);
+    let surfaceDefocus = focusDefocus(surfaceT, uv);
 
     let cinematicSurface = mix(vec3f(0.009, 0.002, 0.004), vec3f(0.075, 0.012, 0.006), depth);
     let analysisSurface = mix(vec3f(0.003, 0.032, 0.027), vec3f(0.15, 0.062, 0.011), depth);
@@ -235,13 +264,13 @@ fn background(ray: vec3f, uv: vec2f) -> vec3f {
 
     let gridCoordinate = abs(fract(q * mix(10.4, 4.0, params.mode) + 0.5) - 0.5);
     let footprint = clamp(surfaceT * params.cameraProjection.x / max(params.height, 1.0) * 3.2, 0.0008, 0.035);
-    let gridWidth = footprint * mix(18.0, 5.4, params.mode);
+    let gridWidth = footprint * mix(18.0, 5.4, params.mode) * (1.0 + surfaceDefocus * 5.0);
     let gridX = 1.0 - smoothstep(0.0, gridWidth, gridCoordinate.x);
     let gridY = 1.0 - smoothstep(0.0, gridWidth, gridCoordinate.y);
     let cinematicGrid = gridY;
     let grid = mix(cinematicGrid, max(gridX, gridY), params.mode) * params.showField;
     let gridColor = mix(vec3f(0.56, 0.22, 0.11), vec3f(0.23, 0.52, 0.43), params.mode);
-    let gridStrength = mix(0.27 + depth * 0.12, 0.22, params.mode);
+    let gridStrength = mix(0.27 + depth * 0.12, 0.22, params.mode) * (1.0 - surfaceDefocus * 0.86);
     surfaceColor = surfaceColor + gridColor * grid * gridStrength;
 
     var localGlow = vec3f(0.0);
@@ -251,7 +280,8 @@ fn background(ray: vec3f, uv: vec2f) -> vec3f {
       let style = fieldStyles[i];
       if (body.z > 0.001) {
         let distance = length(q - body.xy);
-        let intensity = exp(-distance * distance * (3.4 + body.w * 2.0)) * body.z * (1.1 - body.w * 0.32);
+        let glowFalloff = (3.4 + body.w * 2.0) * mix(1.0, 0.68, surfaceDefocus);
+        let intensity = exp(-distance * distance * glowFalloff) * body.z * (1.1 - body.w * 0.32);
         let wellTint = mix(vec3f(0.98, 0.48, 0.14), style.rgb, mix(0.34, 0.2, params.mode));
         localGlow = localGlow + wellTint * intensity;
       }
@@ -259,6 +289,8 @@ fn background(ray: vec3f, uv: vec2f) -> vec3f {
     let breathing = 1.0 + sin(params.time * 0.76) * 0.03 * params.pulse;
     let distanceFade = clamp(1.12 - surfaceT * 0.035, 0.72, 1.0);
     surfaceColor = (surfaceColor + localGlow * breathing * mix(0.58, 0.31, params.mode)) * distanceFade;
+    let softSurface = mix(vec3f(0.012, 0.003, 0.004), surfaceColor, 0.48);
+    surfaceColor = mix(surfaceColor, softSurface, surfaceDefocus * 0.48);
     color = surfaceColor;
   }
 
@@ -271,12 +303,25 @@ fn background(ray: vec3f, uv: vec2f) -> vec3f {
     let analysisRim = mix(vec3f(1.0, 0.48, 0.06), sphereStyle.rgb, 0.52);
     let rimColor = mix(cinematicRim, analysisRim, params.mode);
     let litBody = mix(sphereStyle.rgb, vec3f(1.0, 0.99, 0.94), 0.28 + light * 0.42);
-    color = litBody * (0.82 + light * 0.55 + sphereMass * 0.05) + rimColor * edge * 1.4;
+    let sharpBody = litBody * (0.82 + light * 0.55 + sphereMass * 0.05) + rimColor * edge * 1.4;
+    let sphereDepth = dot(sphereCenter - origin, params.cameraForward.xyz);
+    let sphereDefocus = focusDefocus(sphereDepth, projectUv(sphereCenter));
+    let softBody = mix(color, sharpBody, 0.14) + glow * 0.1;
+    color = mix(sharpBody, softBody, sphereDefocus * 0.94);
   }
 
   color = color + glow * mix(0.44, 0.17, params.mode);
+  let sceneDepth = min(surfaceT, sphereT);
+  let sceneDefocus = select(0.0, focusDefocus(sceneDepth, uv), sceneDepth < FAR_DISTANCE);
+  let luminance = dot(color, vec3f(0.2126, 0.7152, 0.0722));
+  let defocusedColor = mix(vec3f(luminance * 0.55), color, 0.62) + glow * 0.08;
+  color = mix(color, defocusedColor, sceneDefocus * 0.34);
+  color = color * (1.0 - sceneDefocus * 0.32 * (1.0 - params.mode));
+  let focusExposure = params.focusParams.z * (1.0 - params.mode);
+  let focusCompressed = color / (vec3f(1.0) + color * 0.26);
+  color = mix(color, focusCompressed, focusExposure * 0.78);
   let grain = hash21(floor(uv * vec2f(params.width, params.height) * 0.42) + floor(params.time * 0.45));
-  color = color + (grain - 0.5) * 0.009;
+  color = color + (grain - 0.5) * mix(0.009, 0.002, sceneDefocus);
   let vignette = 1.0 - smoothstep(0.42, 1.06, length((uv - 0.5) * vec2f(aspect * 0.72, 0.86)));
   color = color * (0.74 + vignette * 0.32);
 

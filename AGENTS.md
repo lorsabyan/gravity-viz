@@ -11,6 +11,7 @@
 - Both Cinematic and Analysis must render exactly one coherent grid on the warped surface. Analysis may use a technical cross-grid and diagnostic overlays, but must not stack a projected mesh, major grid, or equipotential contour family over the shader grid.
 - Keep a legible but behaviorally realistic Solar System sample: the Sun plus all eight planets in correct orbital order, compressed astronomical distances, elliptical and inclined animated orbits, period-ordered speeds, planet-specific colors/sizes, varied surface clearance, and orbital element readouts.
 - Keep Solar System physics and display scales separate: preserve real Earth-mass and AU values, derive orbital periods from those values, map physical mass into bounded visual well strength, and offer both logarithmic full-system spacing and linear true-ratio distance spacing.
+- Selected-body focus uses a smooth tracking dolly with wheel-adjustable zoom and a user-adjustable tilted focal band (tilt-shift softening/bokeh) in Cinematic mode; Analysis mode keeps the same camera lock but remains optically crisp. Keep both focus blur and tilt user-adjustable.
 
 Run the local server yourself and open the preview in the browser available to this environment. Do not give the user server-start instructions when you can run it.
 

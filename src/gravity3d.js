@@ -501,6 +501,60 @@ export function cameraUniforms(camera, width, height) {
   };
 }
 
+export function recommendedFocusDistance(body) {
+  if (!body) return 2.24;
+  return clamp(2.08 + Math.sqrt(Math.max(body.mass, 0.05)) * bodyRadiusScale(body) * 0.14, 2.12, 2.62);
+}
+
+export function stepFocusedCamera(engine, camera, focusedBody, elapsed, desiredDistance) {
+  if (!Number.isInteger(focusedBody) || !engine.bodies[focusedBody]) return false;
+  const body = engine.bodies[focusedBody];
+  if (engine.dragging?.index === focusedBody) return true;
+  const world = bodyPosition(body, engine.bodies);
+  const response = 1 - Math.exp(-Math.min(Math.max(elapsed, 0), 0.1) * 4.8);
+  const bodyOffset = clamp(0.075 + Math.sqrt(Math.max(body.mass, 0.05)) * 0.022, 0.075, 0.15);
+  const targetDistance = Number.isFinite(desiredDistance)
+    ? desiredDistance
+    : recommendedFocusDistance(body);
+
+  camera.targetX += (world.x - camera.targetX) * response;
+  camera.targetY += (world.y - bodyOffset - camera.targetY) * response;
+  camera.targetZ += (world.z - camera.targetZ) * response;
+  camera.distance += (targetDistance - camera.distance) * response;
+  clampCamera(camera);
+  return true;
+}
+
+export function focusUniforms(engine, options, width, height) {
+  const focusBlur = clamp(options.focusBlur ?? 0.68, 0, 1);
+  const focusTilt = clamp(options.focusTilt ?? -8, -35, 35);
+  const tiltSlope = Math.tan((focusTilt * Math.PI) / 180);
+  const bandWidth = 0.115 + (1 - focusBlur) * 0.08;
+  const focusedBody = Number.isInteger(options.focusedBody)
+    ? engine.bodies[options.focusedBody]
+    : null;
+  if (!focusedBody || options.analysis) {
+    return {
+      focusParams: [1, focusBlur, 0, 0],
+      focusBand: [0.5, 0.5, tiltSlope, bandWidth],
+    };
+  }
+
+  const basis = getCameraBasis(options.camera, width, height);
+  const world = bodyPosition(focusedBody, engine.bodies);
+  const projected = projectWorld(world, basis);
+  const focusDepth = projected.depth;
+  return {
+    focusParams: [Math.max(focusDepth, 0.1), focusBlur, 1, 0],
+    focusBand: [
+      clamp(projected.x / Math.max(width, 1), -0.25, 1.25),
+      clamp(projected.y / Math.max(height, 1), -0.25, 1.25),
+      tiltSlope,
+      bandWidth,
+    ],
+  };
+}
+
 export function projectWorld(point, basis) {
   const relative = subtract(point, basis.position);
   const depth = dot(relative, basis.forward);
@@ -742,7 +796,7 @@ function drawBodyRing(context, body, bodies, basis, color, selected) {
   context.restore();
 }
 
-function drawSolarOrbits(context, bodies, basis, analysis, selectedBody) {
+function drawSolarOrbits(context, bodies, basis, analysis, selectedBody, blurAtProjection = null) {
   context.save();
   for (let bodyIndex = 1; bodyIndex < bodies.length; bodyIndex += 1) {
     const body = bodies[bodyIndex];
@@ -771,6 +825,9 @@ function drawSolarOrbits(context, bodies, basis, analysis, selectedBody) {
     context.lineWidth = selected ? (analysis ? 1.25 : 0.92) : (analysis ? 0.72 : 0.5);
     context.shadowColor = selected ? bodyColorCss(body, analysis ? 0.38 : 0.2) : "transparent";
     context.shadowBlur = selected ? 6 : 0;
+    const bodyProjection = projectWorld(bodyPosition(body, bodies), basis);
+    const orbitBlur = blurAtProjection?.(bodyProjection) ?? 0;
+    context.filter = orbitBlur > 0.05 ? `blur(${orbitBlur.toFixed(2)}px)` : "none";
     if (analysis && !selected) context.setLineDash([2, 5]);
     else context.setLineDash([]);
     strokeProjectedPath(context, points, basis);
@@ -981,6 +1038,32 @@ export function drawSceneOverlay(canvas, engine, options, time, fallback = false
   context.setTransform(dpr, 0, 0, dpr, 0, 0);
   context.clearRect(0, 0, width, height);
   const basis = getCameraBasis(options.camera, width, height);
+  const focusedBody = Number.isInteger(options.focusedBody)
+    ? engine.bodies[options.focusedBody]
+    : null;
+  const focusDepth = focusedBody
+    ? projectWorld(bodyPosition(focusedBody, engine.bodies), basis).depth
+    : 0;
+  const focusProjection = focusedBody
+    ? projectWorld(bodyPosition(focusedBody, engine.bodies), basis)
+    : null;
+  const focusActive = Boolean(focusedBody && !options.analysis && focusDepth > 0.1);
+  const focusBlur = clamp(options.focusBlur ?? 0.68, 0, 1);
+  const focusTilt = clamp(options.focusTilt ?? -8, -35, 35);
+  const bandWidth = 0.115 + (1 - focusBlur) * 0.08;
+  const blurAtProjection = (projected) => {
+    if (!focusActive || !projected || !Number.isFinite(projected.depth)) return 0;
+    const depthDelta = Math.abs(projected.depth - focusDepth) / Math.max(focusDepth * 0.42, 0.24);
+    const screenX = projected.x / Math.max(width, 1);
+    const screenY = projected.y / Math.max(height, 1);
+    const focusX = focusProjection.x / Math.max(width, 1);
+    const focusY = focusProjection.y / Math.max(height, 1);
+    const slope = Math.tan((focusTilt * Math.PI) / 180);
+    const bandDistance = Math.abs((screenY - focusY) - (screenX - focusX) * basis.aspect * slope);
+    const bandDefocus = clamp((bandDistance - bandWidth * 0.42) / Math.max(bandWidth * 1.1, 0.01), 0, 1);
+    const defocus = Math.max(clamp(depthDelta, 0, 1) * 0.32, bandDefocus);
+    return clamp(defocus * focusBlur * 6.5, 0, 5.2);
+  };
 
   if (fallback) drawFallbackSpace(context, width, height, options.analysis);
   if (fallback) drawSurfaceMesh(context, engine, options, basis, fallback);
@@ -1003,7 +1086,14 @@ export function drawSceneOverlay(canvas, engine, options, time, fallback = false
   }
 
   if (engine.preset === "solar" && options.showTrails) {
-    drawSolarOrbits(context, engine.bodies, basis, options.analysis, options.selectedBody);
+    drawSolarOrbits(
+      context,
+      engine.bodies,
+      basis,
+      options.analysis,
+      options.selectedBody,
+      blurAtProjection,
+    );
   }
 
   if (options.showTrails) {
@@ -1021,6 +1111,8 @@ export function drawSceneOverlay(canvas, engine, options, time, fallback = false
       context.strokeStyle = pathColor;
       context.shadowColor = options.analysis ? "rgba(255,211,0,.34)" : "rgba(255,106,35,.16)";
       context.shadowBlur = options.analysis && index % 7 === 0 ? 7 : 1.5;
+      const trailBlur = blurAtProjection(projected);
+      context.filter = trailBlur > 0.05 ? `blur(${trailBlur.toFixed(2)}px)` : "none";
       strokeProjectedPath(context, particle.history, basis);
       context.restore();
 
@@ -1030,6 +1122,8 @@ export function drawSceneOverlay(canvas, engine, options, time, fallback = false
         const to = projectWorld(particle.history[arrowIndex], basis);
         context.save();
         context.globalAlpha = depthAlpha;
+        const arrowBlur = blurAtProjection(projected);
+        context.filter = arrowBlur > 0.05 ? `blur(${arrowBlur.toFixed(2)}px)` : "none";
         drawArrowhead(context, from, to, pathBright, index % 7 === 0 ? 9.5 : 7.2);
         context.restore();
       }
@@ -1044,11 +1138,16 @@ export function drawSceneOverlay(canvas, engine, options, time, fallback = false
   for (const { index, projected } of particles) {
     const perspective = clamp(2.7 / projected.depth, 0.54, 1.65);
     const radius = (index % 8 === 0 ? 2.2 : 1.22) * perspective;
+    const particleBlur = blurAtProjection(projected);
+    context.save();
+    context.filter = particleBlur > 0.05 ? `blur(${particleBlur.toFixed(2)}px)` : "none";
+    context.globalAlpha = 1 - Math.min(particleBlur * 0.055, 0.24);
     if (!options.analysis && index % 4 !== 0) {
       context.fillStyle = `rgba(44, 7, 5, ${index % 3 === 0 ? 0.72 : 0.46})`;
       context.beginPath();
       context.arc(projected.x, projected.y, Math.max(0.55, radius * 0.58), 0, TAU);
       context.fill();
+      context.restore();
       continue;
     }
     const glow = context.createRadialGradient(projected.x, projected.y, 0, projected.x, projected.y, radius * 2.8);
@@ -1059,6 +1158,7 @@ export function drawSceneOverlay(canvas, engine, options, time, fallback = false
     context.beginPath();
     context.arc(projected.x, projected.y, radius * 2.8, 0, TAU);
     context.fill();
+    context.restore();
   }
 
   const bodyEntries = engine.bodies
@@ -1072,9 +1172,16 @@ export function drawSceneOverlay(canvas, engine, options, time, fallback = false
   for (const { body, index, projected } of bodyEntries) {
     const isSelected = index === options.selectedBody;
     if (engine.preset === "solar" && body.name === "Saturn") {
+      const ringBlur = blurAtProjection(projected);
+      context.save();
+      context.filter = ringBlur > 0.05 ? `blur(${ringBlur.toFixed(2)}px)` : "none";
       drawSaturnRings(context, body, engine.bodies, basis, options.analysis);
+      context.restore();
     }
     if (options.analysis || fallback) {
+      const bodyBlur = blurAtProjection(projected);
+      context.save();
+      context.filter = bodyBlur > 0.05 ? `blur(${bodyBlur.toFixed(2)}px)` : "none";
       drawBodyRing(
         context,
         body,
@@ -1101,6 +1208,7 @@ export function drawSceneOverlay(canvas, engine, options, time, fallback = false
       }
       drawBodyCore(context, body, projected, options.analysis, isSelected, fallback);
       if (isSelected && options.analysis) drawBodyLabel(context, body, projected, options.analysis);
+      context.restore();
     }
   }
 

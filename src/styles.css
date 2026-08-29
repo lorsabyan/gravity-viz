@@ -179,7 +179,8 @@ button {
 .quiet-action,
 .select-control select,
 .zen-exit,
-.orbit-readout {
+.orbit-readout,
+.focus-readout {
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   letter-spacing: 0.12em;
 }
@@ -325,6 +326,11 @@ button {
   box-shadow: 0 0 12px var(--accent);
 }
 
+.panel-content input[type="range"]:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+}
+
 .select-control select {
   grid-column: 1 / -1;
   width: 100%;
@@ -381,6 +387,19 @@ button {
 .panel-actions .quiet-action {
   padding-inline: 7px;
   letter-spacing: 0.08em;
+}
+
+.panel-actions .focus-action {
+  grid-column: 1 / -1;
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  color: var(--accent-strong);
+}
+
+.panel-actions .focus-action.is-active {
+  border-color: color-mix(in srgb, var(--accent-strong) 68%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 0 0 22px color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .quiet-action:hover,
@@ -516,6 +535,18 @@ button {
   color: white;
 }
 
+.focus-readout {
+  display: inline-block;
+  margin-top: 11px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+  color: var(--accent-strong);
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
 .interaction-hint {
   position: absolute;
   z-index: 3;
@@ -539,6 +570,16 @@ button {
   border: 1px solid var(--accent);
   border-radius: 50%;
   box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 44%, transparent);
+}
+
+.gravity-lab.is-focused .crosshair {
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 8px var(--accent), 0 0 22px color-mix(in srgb, var(--accent) 42%, transparent);
+  animation: focus-breathe 1.8s ease-in-out infinite;
+}
+
+@keyframes focus-breathe {
+  50% { transform: scale(0.72); opacity: 0.58; }
 }
 
 .control-dock {

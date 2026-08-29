@@ -24,6 +24,7 @@ Gravitas is an interactive, true-3D gravity-fabric experiment. A perspective Web
 |---|---|
 | **True spatial scene** | Perspective camera, bodies at different heights, surface-relative anchors, and 3D tracer trajectories. |
 | **Cinematic + Analysis** | Move between a low-angle copper gravity fabric and an information-rich scientific view. |
+| **Tilt focus** | Lock onto any body with a smooth dolly, then shape a narrow angled focal band with adjustable blur and tilt. |
 | **Interactive physics** | Move wells, change their visual influence, launch tracers, pause time, and inspect Lagrange points. |
 | **Real Solar System data** | All eight planets use Earth-mass values, AU distances, eccentricity, inclination, and Kepler-derived periods. |
 | **Two distance models** | Compare a legible logarithmic full-system map with linear, true-ratio AU spacing. |
@@ -67,14 +68,16 @@ Body radius, well depth, and animation time are compressed so the entire system 
 | Drag empty space | Orbit the perspective camera |
 | Wheel / trackpad | Zoom |
 | Drag a body | Move it across the field plane |
+| Double-click a body | Dolly in and lock the tilted focal band to it |
 | Shift-drag | Aim and launch a 3D tracer |
 | `Space` | Pause or resume |
 | `A` | Toggle Analysis mode |
+| `D` | Toggle tilt focus on the selected body |
 | `Z` | Enter or leave Zen mode |
 | `R` | Reset the active simulation |
 | `0` | Reset the camera |
 
-The Tune panel exposes simulation sample, time rate, gravity, camera elevation, antialiasing, selected-body height, physical data, visual well strength, and Solar System distance mapping.
+The Tune panel exposes simulation sample, time rate, gravity, camera elevation, focus blur, focal-plane tilt, antialiasing, selected-body height, physical data, visual well strength, and Solar System distance mapping.
 
 ## Stack
 
